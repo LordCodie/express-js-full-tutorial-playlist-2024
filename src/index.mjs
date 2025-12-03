@@ -1,92 +1,45 @@
 import express from "express";
+import cookieParser from "cookie-parser";
+import session from "express-session";
+import indexRoute from './routes/index.mjs'
+import { mockUsers } from "./utils/constants.mjs";
 
 const app = express()
+
 app.use(express.json())
+app.use(cookieParser("helloworld"))
+app.use(session({
+    secret: 'Anson the dev',
+    saveUninitialized: false,
+    resave: false,
+    cookie: {
+        maxAge: 60000 * 60
+    }
+}))
 
-const loggingMiddleware = (req, res, next) => {
-    console.log(`${req.method} - ${req.url}`)
-    next()
-}
-
-app.use(loggingMiddleware)
-
-const resolveIndexByUserId = (req, res, next) => {
-    const { params: { id } } = req
-    const parsedId = parseInt(id)
-    if (isNaN(parsedId))
-        return res.sendStatus(400)
-    const findUserIndex = mockUsers.findIndex(
-        user => user.id === parsedId
-    )
-    if (findUserIndex === -1) return res.sendStatus(404)
-    req.findUserIndex = findUserIndex
-    next()
-}
+app.use(indexRoute)
 
 const PORT = 3000 || process.env.PORT
 
-const mockUsers = [
-    { id: 1, username: "anson", displayName: "Annie" },
-    { id: 2, username: "jack", displayName: "Jackie" },
-    { id: 3, username: "adam", displayName: "Addy" },
-    { id: 4, username: "tina", displayName: "Tina" },
-    { id: 5, username: "jason", displayName: "BigJ" },
-    { id: 6, username: "henry", displayName: "H" },
-    { id: 7, username: "marilyn", displayName: "Marry" }
-]
-
 app.get("/", (req, res) => {
+    req.session.visted = true
+    res.cookie('hello', 'world', { maxAge: 60000 * 60, signed: true })
     res.status(201).send({ msg: 'hello' })
 })
 
-app.get("/api/users", (req, res) => {
-    console.log(req.query)
-    const { query: { filter, value } } = req
-    if (!filter, !value)
-        return res.status(200).send(mockUsers)
-    if (filter && value) return res.send(
-        mockUsers.filter(user =>
-            user[filter].includes(value)
-        )
-    )
-    res.status(200).send(mockUsers)
+app.post('/api/auth', (req, res) => {
+    const { body: { username, password } } = req
+    const findUser = mockUsers.find(user => user.username === username)
+    if (!findUser || findUser.password !== password)
+        return res.status(401).send({ msg: 'BAD CREDENTIALS' })
+    req.session.user = findUser
+    return res.status(200).send(findUser)
 })
 
-app.post('/api/users', (req, res) => {
-    console.log(req.body)
-    const { body } = req
-    const newUser = { id: mockUsers[mockUsers.length - 1].id + 1, ...body }
-    mockUsers.push(newUser)
-    return res.status(201).send(mockUsers)
-})
-
-app.get("/api/users/:id", (req, res) => {
-    const { findUserIndex } = req
-    const findUser = mockUsers[findUserIndex]
-    if (!findUser) return res.sendStatus(404)
-    return res.send(findUser)
-})
-
-app.get('/api/products', (req, res) => {
-    res.status(200).send([{ id: 123, name: 'chicken breast', price: 12.99 }])
-})
-
-app.put('/api/users/:id', resolveIndexByUserId, (req, res) => {
-    const { body, findUserIndex } = req
-    mockUsers[findUserIndex] = { id: mockUsers[findUserIndex].id, ...body }
-    return res.sendStatus(200)
-})
-
-app.patch('/api/users/:id', resolveIndexByUserId, (req, res) => {
-    const { body, findUserIndex } = req
-    mockUsers[findUserIndex] = { ...mockUsers[findUserIndex], ...body }
-    return res.sendStatus(200)
-})
-
-app.delete("/api/users/:id", (req, res) => {
-    const { findUserIndex } = req
-    mockUsers.splice(findUserIndex, 1)
-    return res.sendStatus(200)
+app.get('/api/auth/status', (req, res) => {
+    return req.session.user ?
+        res.status(200).send(req.session.user)
+        : res.status(401).send({ msg: "NOT AUTHENTICATED" })
 })
 
 app.listen(PORT, () => {
